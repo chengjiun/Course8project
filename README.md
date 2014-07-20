@@ -1,3 +1,5 @@
 Course8project
 ==============
-See the markdown file. 
+GH-branch is difficult to use. 
+Why not use pdf?
+
