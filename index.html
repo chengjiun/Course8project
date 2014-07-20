@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Course8project : " />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Course8project</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/chengjiun/Course8project">View on GitHub</a>
+
+          <h1 id="project_title">Course8project</h1>
+          <h2 id="project_tagline"></h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/chengjiun/Course8project/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/chengjiun/Course8project/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <hr><p>title: "DSci-ML Course Project"</p>
+
+<h2>
+<a name="output-html_document" class="anchor" href="#output-html_document"><span class="octicon octicon-link"></span></a>output: html_document</h2>
+
+<h3>
+<a name="abstract" class="anchor" href="#abstract"><span class="octicon octicon-link"></span></a>Abstract</h3>
+
+<ul>
+<li>Try to use quantified movements to classify the exercises. The data is taken from Velloso et al. 2013. </li>
+<li>The data is cleaned by imputting 0 to NA measurements.</li>
+<li>We model the training set using both CART and gradient boosting tree models. 20% of the training set are left out to examine the accuracy of the model. The models are learned with 10-fold cross-validation, which optimized the kappa. </li>
+<li>The accuracy, sensitivity and specificity of the boosting model reaches above 94%.<br>
+</li>
+</ul><h3>
+<a name="background" class="anchor" href="#background"><span class="octicon octicon-link"></span></a>Background</h3>
+
+<p>The project is to see
+if we can use some quantified movements to predict what motion the testers are doing. The project is based on the research of Ref [1], and their public data. </p>
+
+<div class="highlight highlight-r"><pre><span class="kp">setwd</span><span class="p">(</span><span class="s">'~/Downloads//C8_ML'</span><span class="p">)</span>
+<span class="kn">library</span><span class="p">(</span>caret<span class="p">)</span>
+<span class="kn">library</span><span class="p">(</span>plyr<span class="p">)</span>
+<span class="kn">library</span><span class="p">(</span>rattle<span class="p">)</span>
+</pre></div>
+
+<h3>
+<a name="a-little-data-exploratory" class="anchor" href="#a-little-data-exploratory"><span class="octicon octicon-link"></span></a>A little Data Exploratory</h3>
+
+<ul>
+<li>Data download: the data is downloaded from "<a href="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv">https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv</a>". The testing data are from "<a href="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv">https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv</a>". The training data include the measure of movements from 6 testers, and the motion are classfied into 5 (A,B,C,D,E) catagories. The first catagories A is the real, completed, "Unilateral Dumbbell Biceps Curl" motion, and the others are failed motions. The detail can be found in the paper ref[1]. </li>
+</ul><div class="highlight highlight-r"><pre><span class="kr">if</span> <span class="p">(</span><span class="o">!</span><span class="kp">file.exists</span><span class="p">(</span><span class="s">'pml-training.csv'</span><span class="p">)){</span>
+    download.file<span class="p">(</span><span class="s">'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'</span><span class="p">)</span>
+<span class="p">}</span>
+<span class="kr">if</span> <span class="p">(</span><span class="o">!</span><span class="kp">file.exists</span><span class="p">(</span><span class="s">'pml-testing.csv'</span><span class="p">)){</span>
+    download.file<span class="p">(</span><span class="s">'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'</span><span class="p">)</span>
+<span class="p">}</span>
+data <span class="o">=</span> read.csv<span class="p">(</span><span class="s">'pml-training.csv'</span><span class="p">,</span>header<span class="o">=</span><span class="kc">TRUE</span><span class="p">,</span>stringsAsFactors<span class="o">=</span><span class="kc">FALSE</span><span class="p">,</span>na.strings<span class="o">=</span><span class="kt">c</span><span class="p">(</span><span class="s">'NA'</span><span class="p">,</span><span class="s">''</span><span class="p">))</span>
+<span class="c1"># remove index</span>
+data <span class="o">&lt;-</span> data<span class="p">[,</span><span class="o">!</span><span class="p">(</span><span class="kp">names</span><span class="p">(</span>data<span class="p">)</span> <span class="o">%in%</span> <span class="kt">c</span><span class="p">(</span><span class="s">'X'</span><span class="p">))]</span>
+<span class="c1"># level the "classe" column</span>
+data<span class="p">[,</span><span class="m">7</span><span class="o">:</span><span class="m">158</span><span class="p">]</span><span class="o">=</span><span class="kp">lapply</span><span class="p">(</span> data<span class="p">[,</span><span class="m">7</span><span class="o">:</span><span class="m">158</span><span class="p">],</span> <span class="kp">as.numeric</span><span class="p">)</span>
+data<span class="o">$</span>classe <span class="o">&lt;-</span> <span class="kp">factor</span><span class="p">(</span>data<span class="o">$</span>classe<span class="p">)</span>
+data<span class="o">$</span>new_window <span class="o">&lt;-</span> <span class="kp">factor</span><span class="p">(</span>data<span class="o">$</span>new_window<span class="p">)</span>
+data<span class="o">$</span>num_window <span class="o">&lt;-</span> <span class="kp">factor</span><span class="p">(</span>data<span class="o">$</span>num_window<span class="p">)</span>
+</pre></div>
+
+<ul>
+<li>Examine the training data</li>
+</ul><pre lang="r,"><code>    names(data)
+    summary(data)
+    table(data$user_name)
+    table(data$classe)
+    ggplot(data,aes(x=num_window,y=yaw_belt,color=user_name)) + geom_point() + facet_wrap(~classe)   
+</code></pre>
+
+<pre><code>1. The first 6 features may contain ID information, so they should be left out as training/testing set. Note that new\_window probably means if the raw is the last measurement of a window, so that it may be informative. However, for simplicity, they are ignored as well.
+2. Some features are redaudant. For example, there are pairs of var\_??? and stddev\_???. I take out the var\_???.
+3. There are about 2600 ~ 3900 entries for each tester, which should be enough to do 10-fold cross vallidation.
+</code></pre>
+
+<ul>
+<li>Are there any missing data? </li>
+</ul><div class="highlight highlight-r"><pre><span class="kp">any</span><span class="p">(</span><span class="kp">is.na</span><span class="p">(</span>data<span class="p">))</span>
+<span class="c1"># woops! many are missing, But, what are they?</span>
+NN<span class="o">&lt;-</span>lapply <span class="p">(</span>data<span class="p">,</span> <span class="kr">function</span> <span class="p">(</span>x<span class="p">)</span> <span class="kp">sum</span><span class="p">(</span><span class="kp">is.na</span><span class="p">(</span>x<span class="p">))</span><span class="o">/</span><span class="kp">length</span><span class="p">(</span><span class="kp">is.na</span><span class="p">(</span>x<span class="p">)))</span>
+indNA<span class="o">&lt;-</span><span class="kp">which</span><span class="p">(</span>NN <span class="o">&gt;</span> <span class="m">0</span><span class="p">)</span>
+NN<span class="p">[</span>indNA<span class="p">]</span>
+<span class="c1">#There are 100 features with 98% of data missing, why? shall we remove them or add some dummy values?</span>
+ggplot<span class="p">(</span>data<span class="p">,</span> aes<span class="p">(</span>y<span class="o">=</span>avg_yaw_forearm<span class="p">,</span> x<span class="o">=</span>avg_roll_dumbbell<span class="p">,</span> color<span class="o">=</span>user_name<span class="p">))</span> <span class="o">+</span> geom_point<span class="p">()</span> <span class="o">+</span> facet_wrap<span class="p">(</span><span class="o">~</span>classe<span class="p">)</span>
+ggplot<span class="p">(</span>data<span class="p">,</span>aes<span class="p">(</span>x<span class="o">=</span>roll_belt<span class="p">,</span>color<span class="o">=</span>user_name<span class="p">))</span><span class="o">+</span>geom_histogram<span class="p">()</span><span class="o">+</span>facet_wrap<span class="p">(</span><span class="o">~</span>classe<span class="p">)</span>
+<span class="c1"># Too complicate!, simply set them the NA value to 0, and keep the feature. </span>
+</pre></div>
+
+<pre><code>Yes, there are. Almost 98% data of 100 features are missing. No idea why the data are missing, and there is no explanation in the paper. Naively, I will set them to 0 and keep the features. (Imputing them to the mean or other values of the 2% non-NA entries doesn't make sense.)
+</code></pre>
+
+<ul>
+<li>Are there personal differences?</li>
+</ul><pre lang="r,"><code>  #check if any of the 6 person behaves abnormally
+  #plot 
+  ggplot(data, aes(x=classe))+geom_histogram()+facet_wrap(~user_name)
+  # testers didn't do same amount of moves, but shouldn't be a problem
+</code></pre>
+
+<pre lang="r,"><code>  # the distribution of each features are different from people, should standardize each feature for each person them
+ggplot(data,aes(x=max_roll_belt,y=min_roll_belt,color=user_name))+geom_point()+facet_wrap(~classe)
+</code></pre>
+
+<pre><code>Yes, the distribution of each feature are different among testers. In principle, the data should be standardized by testers. However, it will limits the usage of the model; the model won't work if we apply it to a new tester with few measurements, which is not able to standardized. 
+On the other hand, I found the testing data set are from the same testers. This sounds like a leak to me, and I decide to take the advantage to use it. So, the user_name is added back to train the model.
+</code></pre>
+
+<h3>
+<a name="preprocess-data" class="anchor" href="#preprocess-data"><span class="octicon octicon-link"></span></a>Preprocess Data</h3>
+
+<p>According to the data explortary above, I preprocess the data as following:</p>
+
+<pre lang="r,"><code># remove id features
+  fitdata = data[,7:158]
+  fitdata$user_name = data$user_name    
+# remove var
+  fitdata &lt;- fitdata[,!(names(fitdata) %in% c("var_pitch_belt", "var_roll_belt", "var_yaw_belt", "var_roll_arm", "var_pitch_arm", "var_yaw_arm", "var_roll_dumbbell", "var_pitch_dumbbell", "var_yaw_dumbbell", "var_roll_forearm", "var_pitch_forearm","var_yaw_forearm"))]
+# standardize (divide the number by the maximum value)
+#  fitdata=ddply(fitdata,~user_name,colwise(function(x){x/max(abs(x),na.rm=TRUE)}))
+# set NA to 0 
+  fitdata[is.na(fitdata)] = 0
+ fitdata$classe = data$classe
+</code></pre>
+
+<h3>
+<a name="experiment" class="anchor" href="#experiment"><span class="octicon octicon-link"></span></a>Experiment</h3>
+
+<p>This is a classification problem, so that the algarithms could be used are like tree, SVD, and etc. Or, we may consider the algarithms combining multiple models, such as random forest, and boosting (gbm in caret). I will try a few different approaches to compare the result, and here is the list: </p>
+
+<ul>
+<li><p>10-fold cross validation + classification and regression tree (CART; rpart in caret)</p></li>
+<li><p>gradient boosting with trees (gbm in caret)</p></li>
+<li><p>-random forest (rf in caret)- (This is too time consuming, so that it was left out at last.) </p></li>
+</ul><p>To securely compare the final result, I keep 20% of data as a testing set. </p>
+
+<div class="highlight highlight-r"><pre><span class="kp">set.seed</span><span class="p">(</span><span class="m">2</span><span class="p">)</span>
+inTrain <span class="o">=</span> createDataPartition<span class="p">(</span>fitdata<span class="o">$</span>classe<span class="p">,</span> p <span class="o">=</span> <span class="m">0.8</span><span class="p">,</span> <span class="kt">list</span><span class="o">=</span><span class="kc">FALSE</span><span class="p">)</span>
+training <span class="o">=</span> fitdata<span class="p">[</span> inTrain<span class="p">,]</span>
+testing <span class="o">=</span> fitdata<span class="p">[</span><span class="o">-</span>inTrain<span class="p">,]</span>
+</pre></div>
+
+<h3>
+<a name="cart" class="anchor" href="#cart"><span class="octicon octicon-link"></span></a>CART</h3>
+
+<p>CART is chosen because of it's interpretibility and simple tunning parameter. It is applied with 10-fold cross validation provided in caret. To be careful, the procedure is repeated for 3 times. In addition, I tried a list of complexity panalty parameter cp=[0.005,0.01,0.03]. </p>
+
+<div class="highlight highlight-r"><pre><span class="kp">set.seed</span><span class="p">(</span><span class="m">100</span><span class="p">)</span>
+fitControl <span class="o">&lt;-</span> trainControl<span class="p">(</span>method <span class="o">=</span> <span class="s">"repeatedcv"</span><span class="p">,</span>number <span class="o">=</span> <span class="m">10</span><span class="p">,</span>repeats<span class="o">=</span><span class="m">3</span><span class="p">)</span>
+rpartGrid <span class="o">&lt;-</span> <span class="kp">expand.grid</span><span class="p">(</span>cp<span class="o">=</span><span class="kt">c</span><span class="p">(</span><span class="m">0.005</span><span class="p">,</span><span class="m">0.01</span><span class="p">,</span><span class="m">0.03</span><span class="p">))</span>
+MDLcart10f <span class="o">&lt;-</span> train<span class="p">(</span>classe <span class="o">~</span> <span class="m">.</span><span class="p">,</span> data <span class="o">=</span> training<span class="p">,</span> method <span class="o">=</span> <span class="s">"rpart"</span><span class="p">,</span>
+                 trControl <span class="o">=</span> fitControl<span class="p">,</span> tuneGrid<span class="o">=</span>rpartGrid<span class="p">)</span>
+MDLcart10f
+fancyRpartPlot<span class="p">(</span>MDLcart10f<span class="o">$</span>finalModel<span class="p">)</span>
+predCart10f <span class="o">&lt;-</span> predict<span class="p">(</span>MDLcart10f<span class="p">,</span> newdata<span class="o">=</span>testing<span class="p">)</span>
+cmCart10f<span class="o">&lt;-</span>confusionMatrix<span class="p">(</span>predCart10f<span class="p">,</span>testing<span class="o">$</span>classe<span class="p">)</span>
+cmCart10f<span class="o">$</span><span class="kp">table</span>
+</pre></div>
+
+<p>The accuracy looks pretty nice. Specificity and Sensitivity of the testing sample is abouve 80%, which are not bad. But, we should compare to other approaches. </p>
+
+<h3>
+<a name="boosting" class="anchor" href="#boosting"><span class="octicon octicon-link"></span></a>Boosting</h3>
+
+<p>Let's experiment the gradient boosting tree model (gbm) in caret. I will use the 10-fold cross varification, and repeat = 1. The three default tuning parameters are n.trees, interaction.depth and shrinkage. Since train is going to automatically tune this parameters to find the best model, I will not change the default.</p>
+
+<div class="highlight highlight-r"><pre><span class="kp">set.seed</span><span class="p">(</span><span class="m">200</span><span class="p">)</span>
+fitControl <span class="o">&lt;-</span> trainControl<span class="p">(</span>method <span class="o">=</span> <span class="s">"repeatedcv"</span><span class="p">,</span>number <span class="o">=</span> <span class="m">10</span><span class="p">,</span>repeats<span class="o">=</span><span class="m">1</span><span class="p">)</span>
+MDLgbm10f <span class="o">&lt;-</span> train<span class="p">(</span>classe <span class="o">~</span> <span class="m">.</span><span class="p">,</span> data <span class="o">=</span> training<span class="p">,</span> method <span class="o">=</span> <span class="s">"gbm"</span><span class="p">,</span>trControl <span class="o">=</span> fitControl<span class="p">,</span>verbose<span class="o">=</span><span class="kc">FALSE</span><span class="p">)</span>
+MDLgbm10f
+predgbm10f <span class="o">&lt;-</span> predict<span class="p">(</span>MDLgbm10f<span class="p">,</span> newdata<span class="o">=</span>testing<span class="p">)</span>
+cmgbm10f<span class="o">&lt;-</span>confusionMatrix<span class="p">(</span>predgbm10f<span class="p">,</span>testing<span class="o">$</span>classe<span class="p">)</span>
+cmgbm10f<span class="o">$</span><span class="kp">table</span>
+</pre></div>
+
+<div class="highlight highlight-r"><pre>cmgbm10f<span class="o">$</span>overall<span class="p">[</span><span class="m">1</span><span class="o">:</span><span class="m">2</span><span class="p">]</span>
+cmgbm10f<span class="o">$</span>byClass<span class="p">[,</span><span class="m">1</span><span class="o">:</span><span class="m">2</span><span class="p">]</span>
+</pre></div>
+
+<p>Hmm, it looks like overfitting? The accuracy, sensitivity, and specificily are all above 94%.  </p>
+
+<pre lang="r,echo=FALSE,cache=TRUE"><code>gbmImp&lt;-varImp(MDLgbm10f)
+gbmImp
+</code></pre>
+
+<p>The list of importance features look normal, and no suspecious ID-related features are found. I will believe the result for now.</p>
+
+<h3>
+<a name="summary-of-comparison" class="anchor" href="#summary-of-comparison"><span class="octicon octicon-link"></span></a>Summary of Comparison</h3>
+
+<p>I use the accuracy, sensitivity, and specificity of the 20% training data set to examine the models. The boosting model seem to provide an almost perfect fit. I can't see why the result is overfitting. If the model is as good as it seems, I would expect the out-of-sample accuracy to be above 95%. </p>
+
+<h3>
+<a name="prediction" class="anchor" href="#prediction"><span class="octicon octicon-link"></span></a>Prediction</h3>
+
+<p>The last part is the code to load the real testing data set, and apply the model for prediction. </p>
+
+<pre lang="r,cache=TRUE"><code>testdata = read.csv('pml-testing.csv',header=TRUE,stringsAsFactors=FALSE,na.strings=c('NA',''))
+# remove index
+testdata &lt;- testdata[,!(names(testdata) %in% c('X'))]
+testdata[,7:158]=lapply(testdata[,7:158], as.numeric)
+</code></pre>
+
+<p>Hmm, these are the same 6 testers, which means I could use user_name to fit, too. This sounds like a leak to me, though. </p>
+
+<div class="highlight highlight-r"><pre><span class="kp">unique</span><span class="p">(</span>testdata<span class="o">$</span>user_name<span class="p">)</span>
+</pre></div>
+
+<div class="highlight highlight-r"><pre>  testdata2 <span class="o">=</span> testdata<span class="p">[,</span><span class="m">7</span><span class="o">:</span><span class="m">158</span><span class="p">]</span>
+  testdata2<span class="o">$</span>user_name<span class="o">=</span>testdata<span class="o">$</span>user_name
+  testdata2<span class="o">$</span>problem_id <span class="o">=</span> testdata<span class="o">$</span>problem_id
+<span class="c1"># remove var</span>
+  testdata2 <span class="o">&lt;-</span> testdata2<span class="p">[,</span><span class="o">!</span><span class="p">(</span><span class="kp">names</span><span class="p">(</span>testdata2<span class="p">)</span> <span class="o">%in%</span> <span class="kt">c</span><span class="p">(</span><span class="s">"var_pitch_belt"</span><span class="p">,</span> <span class="s">"var_roll_belt"</span><span class="p">,</span> <span class="s">"var_yaw_belt"</span><span class="p">,</span> <span class="s">"var_roll_arm"</span><span class="p">,</span> <span class="s">"var_pitch_arm"</span><span class="p">,</span> <span class="s">"var_yaw_arm"</span><span class="p">,</span> <span class="s">"var_roll_dumbbell"</span><span class="p">,</span> <span class="s">"var_pitch_dumbbell"</span><span class="p">,</span> <span class="s">"var_yaw_dumbbell"</span><span class="p">,</span> <span class="s">"var_roll_forearm"</span><span class="p">,</span> <span class="s">"var_pitch_forearm"</span><span class="p">,</span><span class="s">"var_yaw_forearm"</span><span class="p">))]</span>
+  testdata2<span class="o">$</span>problem_id <span class="o">=</span> testdata<span class="o">$</span>problem_id
+<span class="c1"># set NA to 0 </span>
+  testdata2<span class="p">[</span><span class="kp">is.na</span><span class="p">(</span>testdata2<span class="p">)]</span> <span class="o">=</span> <span class="m">0</span>
+</pre></div>
+
+<p>Ok! do prediction!</p>
+
+<pre lang="r,cache=TRUE"><code>  pred &lt;- as.character(predict(MDLgbm10f,newdata=testdata2))
+</code></pre>
+
+<p>Write out the result!</p>
+
+<div class="highlight highlight-r"><pre>  n <span class="o">=</span> <span class="kp">length</span><span class="p">(</span>pred<span class="p">)</span>
+  <span class="kr">for</span><span class="p">(</span>i <span class="kr">in</span> <span class="m">1</span><span class="o">:</span>n<span class="p">){</span>
+    filename <span class="o">=</span> <span class="kp">paste0</span><span class="p">(</span><span class="s">"problem_id_"</span><span class="p">,</span>i<span class="p">,</span><span class="s">".txt"</span><span class="p">)</span>
+    write.table<span class="p">(</span>pred<span class="p">[</span>i<span class="p">],</span>file<span class="o">=</span>filename<span class="p">,</span>quote<span class="o">=</span><span class="kc">FALSE</span><span class="p">,</span>row.names<span class="o">=</span><span class="kc">FALSE</span><span class="p">,</span>col.names<span class="o">=</span><span class="kc">FALSE</span><span class="p">)</span>
+  <span class="p">}</span>
+</pre></div>
+
+<h3>
+<a name="reference" class="anchor" href="#reference"><span class="octicon octicon-link"></span></a>Reference:</h3>
+
+<p>Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. (Read more: <a href="http://groupware.les.inf.puc-rio.br/har#ixzz37pRTskR3">http://groupware.les.inf.puc-rio.br/har#ixzz37pRTskR3</a>)
+This dataset is licensed under the Creative Commons license (CC BY-SA).</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Course8project maintained by <a href="https://github.com/chengjiun">chengjiun</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
