@@ -79,7 +79,7 @@ ggplot(data,aes(x=roll_belt,color=user_name))+geom_histogram()+facet_wrap(~class
 ggplot(data,aes(x=max_roll_belt,y=min_roll_belt,color=user_name))+geom_point()+facet_wrap(~classe)
 ```
     Yes, the distribution of each feature are different among testers. In principle, the data should be standardized by testers. However, it will limits the usage of the model; the model won't work if we apply it to a new tester with few measurements, which is not able to standardized. 
-    On the other hand, I found the testing data set are from the same testers. This sounds a leak to me, and I decide to take the advantage to use it. So, I added back the user_name to train the model.
+    On the other hand, I found the testing data set are from the same testers. This sounds like a leak to me, and I decide to take the advantage to use it. So, the user_name is added back to train the model.
 
 ### Preprocess Data
 According to the data explortary above, I preprocess the data as following:
@@ -105,7 +105,7 @@ This is a classification problem, so that the algarithms could be used are like 
 
 * -random forest (rf in caret)- (This is too time consuming, so that it was left out at last.) 
 
-To compare the final result, I keep 20% of data as a testing set. 
+To securely compare the final result, I keep 20% of data as a testing set. 
 
 ```{r echo=TRUE,cache=TRUE, message=FALSE, warning=FALSE}
 set.seed(2)
@@ -154,7 +154,7 @@ gbmImp
 The list of importance features look normal, and no suspecious ID-related features are found. I will believe the result for now.
 
 ### Summary of Comparison
-I use the accuracy, sensitivity, and specificity of the 20% training data set to examine the models. The boosting model seem to provide a perfect fit. I can't see why the result is overfitting. If the model is as good as it seems, I would expect the out-of-sample accuracy to be almost perfect. This assumes the 6 testers are representative, which is difficult to confirm without more data. If I design the experiment, I will include more testers, since the personal difference of the excersies could be the most critical uncertainties. 
+I use the accuracy, sensitivity, and specificity of the 20% training data set to examine the models. The boosting model seem to provide an almost perfect fit. I can't see why the result is overfitting. If the model is as good as it seems, I would expect the out-of-sample accuracy to be above 95%. 
 
 ### Prediction
 The last part is the code to load the real testing data set, and apply the model for prediction. 
@@ -164,7 +164,7 @@ testdata = read.csv('pml-testing.csv',header=TRUE,stringsAsFactors=FALSE,na.stri
 testdata <- testdata[,!(names(testdata) %in% c('X'))]
 testdata[,7:158]=lapply(testdata[,7:158], as.numeric)
 ```
-Hmm, these are the same 6 testers, which means I could use user_name to fit, too. However, this sounds like a leak to me. 
+Hmm, these are the same 6 testers, which means I could use user_name to fit, too. This sounds like a leak to me, though. 
 ```{r echo=FALSE,cache=TRUE}
 unique(testdata$user_name)
 ```
@@ -182,8 +182,6 @@ unique(testdata$user_name)
 Ok! do prediction!
 ```{r,cache=TRUE}
   pred <- as.character(predict(MDLgbm10f,newdata=testdata2))
-  str(pred)
-  testdata2$problem_id
 ```
 Write out the result!
 ```{r cache=TRUE}
