@@ -1,0 +1,200 @@
+---
+title: "DSci-ML Course Project"
+output: html_document
+---
+
+### Abstract
+* Try to use quantified movements to classify the exercises. The data is taken from Velloso et al. 2013. 
+* The data is cleaned by imputting 0 to NA measurements.
+* We model the training set using both CART and gradient boosting tree models. 20% of the training set are left out to examine the accuracy of the model. The models are learned with 10-fold cross-validation, which optimized the kappa. 
+* The accuracy, sensitivity and specificity of the boosting model reaches above 94%.  
+
+### Background
+The project is to see
+if we can use some quantified movements to predict what motion the testers are doing. The project is based on the research of Ref [1], and their public data. 
+
+```{r include=FALSE}
+setwd('~/Downloads//C8_ML')
+library(caret)
+library(plyr)
+library(rattle)
+```
+
+### A little Data Exploratory
+
+* Data download: the data is downloaded from "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv". The testing data are from "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv". The training data include the measure of movements from 6 testers, and the motion are classfied into 5 (A,B,C,D,E) catagories. The first catagories A is the real, completed, "Unilateral Dumbbell Biceps Curl" motion, and the others are failed motions. The detail can be found in the paper ref[1]. 
+
+```{r include=FALSE,cache=TRUE, message=FALSE, warning=FALSE}
+if (!file.exists('pml-training.csv')){
+    download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
+}
+if (!file.exists('pml-testing.csv')){
+    download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')
+}
+data = read.csv('pml-training.csv',header=TRUE,stringsAsFactors=FALSE,na.strings=c('NA',''))
+# remove index
+data <- data[,!(names(data) %in% c('X'))]
+# level the "classe" column
+data[,7:158]=lapply( data[,7:158], as.numeric)
+data$classe <- factor(data$classe)
+data$new_window <- factor(data$new_window)
+data$num_window <- factor(data$num_window)
+```
+
+* Examine the training data
+```{r, include=FALSE,cache=TRUE, message=FALSE, warning=FALSE}
+    names(data)
+    summary(data)
+    table(data$user_name)
+    table(data$classe)
+    ggplot(data,aes(x=num_window,y=yaw_belt,color=user_name)) + geom_point() + facet_wrap(~classe)   
+```
+    1. The first 6 features may contain ID information, so they should be left out as training/testing set. Note that new\_window probably means if the raw is the last measurement of a window, so that it may be informative. However, for simplicity, they are ignored as well.
+    2. Some features are redaudant. For example, there are pairs of var\_??? and stddev\_???. I take out the var\_???.
+    3. There are about 2600 ~ 3900 entries for each tester, which should be enough to do 10-fold cross vallidation.
+
+* Are there any missing data? 
+```{r ,echo=TRUE, results='hide',fig.show='hide',cache=TRUE, message=FALSE, warning=FALSE}
+any(is.na(data))
+# woops! many are missing, But, what are they?
+NN<-lapply (data, function (x) sum(is.na(x))/length(is.na(x)))
+indNA<-which(NN > 0)
+NN[indNA]
+#There are 100 features with 98% of data missing, why? shall we remove them or add some dummy values?
+ggplot(data, aes(y=avg_yaw_forearm, x=avg_roll_dumbbell, color=user_name)) + geom_point() + facet_wrap(~classe)
+ggplot(data,aes(x=roll_belt,color=user_name))+geom_histogram()+facet_wrap(~classe)
+# Too complicate!, simply set them the NA value to 0, and keep the feature. 
+```
+    Yes, there are. Almost 98% data of 100 features are missing. No idea why the data are missing, and there is no explanation in the paper. Naively, I will set them to 0 and keep the features. (Imputing them to the mean or other values of the 2% non-NA entries doesn't make sense.)
+
+* Are there personal differences?
+```{r, echo=TRUE, results='hide',cache=TRUE, message=FALSE, warning=FALSE}
+  #check if any of the 6 person behaves abnormally
+  #plot 
+  ggplot(data, aes(x=classe))+geom_histogram()+facet_wrap(~user_name)
+  # testers didn't do same amount of moves, but shouldn't be a problem
+```
+```{r, include=TRUE,echo=TRUE, results='hide',fig.show='hide',cache=TRUE, message=FALSE, warning=FALSE}
+  # the distribution of each features are different from people, should standardize each feature for each person them
+ggplot(data,aes(x=max_roll_belt,y=min_roll_belt,color=user_name))+geom_point()+facet_wrap(~classe)
+```
+    Yes, the distribution of each feature are different among testers. In principle, the data should be standardized by testers. However, it will limits the usage of the model; the model won't work if we apply it to a new tester with few measurements, which is not able to standardized. 
+    On the other hand, I found the testing data set are from the same testers. This sounds a leak to me, and I decide to take the advantage to use it. So, I added back the user_name to train the model.
+
+### Preprocess Data
+According to the data explortary above, I preprocess the data as following:
+```{r, echo=TRUE,cache=TRUE, message=FALSE, warning=FALSE}
+# remove id features
+  fitdata = data[,7:158]
+  fitdata$user_name = data$user_name    
+# remove var
+  fitdata <- fitdata[,!(names(fitdata) %in% c("var_pitch_belt", "var_roll_belt", "var_yaw_belt", "var_roll_arm", "var_pitch_arm", "var_yaw_arm", "var_roll_dumbbell", "var_pitch_dumbbell", "var_yaw_dumbbell", "var_roll_forearm", "var_pitch_forearm","var_yaw_forearm"))]
+# standardize (divide the number by the maximum value)
+#  fitdata=ddply(fitdata,~user_name,colwise(function(x){x/max(abs(x),na.rm=TRUE)}))
+# set NA to 0 
+  fitdata[is.na(fitdata)] = 0
+ fitdata$classe = data$classe
+```
+
+### Experiment
+This is a classification problem, so that the algarithms could be used are like tree, SVD, and etc. Or, we may consider the algarithms combining multiple models, such as random forest, and boosting (gbm in caret). I will try a few different approaches to compare the result, and here is the list: 
+
+* 10-fold cross validation + classification and regression tree (CART; rpart in caret)
+
+* gradient boosting with trees (gbm in caret)
+
+* -random forest (rf in caret)- (This is too time consuming, so that it was left out at last.) 
+
+To compare the final result, I keep 20% of data as a testing set. 
+
+```{r echo=TRUE,cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(2)
+inTrain = createDataPartition(fitdata$classe, p = 0.8, list=FALSE)
+training = fitdata[ inTrain,]
+testing = fitdata[-inTrain,]
+```
+
+### CART 
+CART is chosen because of it's interpretibility and simple tunning parameter. It is applied with 10-fold cross validation provided in caret. To be careful, the procedure is repeated for 3 times. In addition, I tried a list of complexity panalty parameter cp=[0.005,0.01,0.03]. 
+```{r echo=TRUE,cache=TRUE, message=FALSE, warning=FALSE} 
+set.seed(100)
+fitControl <- trainControl(method = "repeatedcv",number = 10,repeats=3)
+rpartGrid <- expand.grid(cp=c(0.005,0.01,0.03))
+MDLcart10f <- train(classe ~ ., data = training, method = "rpart",
+                 trControl = fitControl, tuneGrid=rpartGrid)
+MDLcart10f
+fancyRpartPlot(MDLcart10f$finalModel)
+predCart10f <- predict(MDLcart10f, newdata=testing)
+cmCart10f<-confusionMatrix(predCart10f,testing$classe)
+cmCart10f$table
+```
+The accuracy looks pretty nice. Specificity and Sensitivity of the testing sample is abouve 80%, which are not bad. But, we should compare to other approaches. 
+
+### Boosting
+Let's experiment the gradient boosting tree model (gbm) in caret. I will use the 10-fold cross varification, and repeat = 1. The three default tuning parameters are n.trees, interaction.depth and shrinkage. Since train is going to automatically tune this parameters to find the best model, I will not change the default.
+```{r echo=TRUE, cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(200)
+fitControl <- trainControl(method = "repeatedcv",number = 10,repeats=1)
+MDLgbm10f <- train(classe ~ ., data = training, method = "gbm",trControl = fitControl,verbose=FALSE)
+MDLgbm10f
+predgbm10f <- predict(MDLgbm10f, newdata=testing)
+cmgbm10f<-confusionMatrix(predgbm10f,testing$classe)
+cmgbm10f$table
+```
+
+```{r echo=FALSE,cache=TRUE}
+cmgbm10f$overall[1:2]
+cmgbm10f$byClass[,1:2]
+```
+Hmm, it looks like overfitting? The accuracy, sensitivity, and specificily are all above 94%.  
+```{r,echo=FALSE,cache=TRUE}
+gbmImp<-varImp(MDLgbm10f)
+gbmImp
+```
+The list of importance features look normal, and no suspecious ID-related features are found. I will believe the result for now.
+
+### Summary of Comparison
+I use the accuracy, sensitivity, and specificity of the 20% training data set to examine the models. The boosting model seem to provide a perfect fit. I can't see why the result is overfitting. If the model is as good as it seems, I would expect the out-of-sample accuracy to be almost perfect. This assumes the 6 testers are representative, which is difficult to confirm without more data. If I design the experiment, I will include more testers, since the personal difference of the excersies could be the most critical uncertainties. 
+
+### Prediction
+The last part is the code to load the real testing data set, and apply the model for prediction. 
+```{r,cache=TRUE}
+testdata = read.csv('pml-testing.csv',header=TRUE,stringsAsFactors=FALSE,na.strings=c('NA',''))
+# remove index
+testdata <- testdata[,!(names(testdata) %in% c('X'))]
+testdata[,7:158]=lapply(testdata[,7:158], as.numeric)
+```
+Hmm, these are the same 6 testers, which means I could use user_name to fit, too. However, this sounds like a leak to me. 
+```{r echo=FALSE,cache=TRUE}
+unique(testdata$user_name)
+```
+
+```{r  message=FALSE, warning=FALSE}
+  testdata2 = testdata[,7:158]
+  testdata2$user_name=testdata$user_name
+  testdata2$problem_id = testdata$problem_id
+# remove var
+  testdata2 <- testdata2[,!(names(testdata2) %in% c("var_pitch_belt", "var_roll_belt", "var_yaw_belt", "var_roll_arm", "var_pitch_arm", "var_yaw_arm", "var_roll_dumbbell", "var_pitch_dumbbell", "var_yaw_dumbbell", "var_roll_forearm", "var_pitch_forearm","var_yaw_forearm"))]
+  testdata2$problem_id = testdata$problem_id
+# set NA to 0 
+  testdata2[is.na(testdata2)] = 0
+```
+Ok! do prediction!
+```{r,cache=TRUE}
+  pred <- as.character(predict(MDLgbm10f,newdata=testdata2))
+  str(pred)
+  testdata2$problem_id
+```
+Write out the result!
+```{r cache=TRUE}
+  n = length(pred)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(pred[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+```
+
+
+### Reference:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. (Read more: http://groupware.les.inf.puc-rio.br/har#ixzz37pRTskR3)
+This dataset is licensed under the Creative Commons license (CC BY-SA).
